@@ -1,119 +1,112 @@
-# Proxy Switcher Dashboard
+# Proxy Switcher Dashboard with qBittorrent Integration
 
 ![App Screenshot](screenshots/Screenshot_2025-07-28_00-43-14.png)
 
-
-A Flask-based web dashboard for managing, testing, and switching SOCKS5 proxies. Designed to work seamlessly with qBittorrent, enabling you to fetch public proxy lists, test their connectivity and SOCKS5 compatibility, and set qBittorrent's active proxy via a modern, sortable web UI.
-
----
+A Flask-based dashboard for downloading, testing, and managing SOCKS5 proxies. Provides live testing for multiple proxy criteria, sortable web UI, and push-to-qBittorrent proxy rotation.
 
 ## Features
 
-* **Fetches fresh SOCKS5 proxy lists** from multiple configurable sources.
-* **Tests each proxy** for TCP connectivity, SOCKS5 handshake, remote connect, and DNS relay support.
-* **Displays test results** with icons and speed (ms), sortable by any column.
-* **Multi-threaded** proxy testing for fast batch validation (5 at a time by default).
-* **One-click set as qBittorrent proxy** (via Web API integration).
-* **Proxy and qBittorrent status** displayed and live-updated.
-* **Auto-sorts** by best-performing proxies by default.
-* **.env file support** for all sensitive credentials (no secrets in source).
+* Fetches SOCKS5 proxy lists from configurable sources
+* Runs detailed, multi-step proxy health checks (TCP, SOCKS5 handshake, remote connect, DNS)
+* Displays sortable, sticky-table results in browser
+* Allows one-click proxy selection for qBittorrent Web UI
+* Tracks and caches test results with timestamp and speed
+* Background scheduler for auto-refreshing and retesting proxies
+* Environment-variable driven (no plaintext credentials)
+* Ready for service/daemon operation
 
----
+## Requirements
 
-## Setup Instructions
+* Python 3.8+
+* [qBittorrent](https://www.qbittorrent.org/) with Web UI enabled
+* Flask
+* Requests
+* PySocks (`SocksiPy_branch`)
+* python-dotenv
+* schedule
 
-### 1. Clone and Install Requirements
+Install requirements:
 
-```sh
-git clone https://github.com/yourname/proxy-switcher-dashboard.git
-cd proxy-switcher-dashboard
+```
 pip install -r requirements.txt
 ```
 
-### 2. Set Up Environment Variables
+## Quick Start
 
-Create a `.env` file in the project root:
+1. **Copy and configure environment**
 
-```ini
-QBITTORRENT_HOST=localhost
-QBITTORRENT_PORT=7070
-QBITTORRENT_USERNAME=admin
-QBITTORRENT_PASSWORD=yourqbitpass
-```
+   Use the included `.env-sample` to create your real `.env`:
 
-### 3. Add Proxy Sources
+   ```bash
+   cp .env-sample .env
+   ```
 
-Create or edit `sources.txt` (one proxy source URL per line):
+   Edit `.env` to match your qBittorrent Web UI instance:
 
-```
-https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt
-https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt
-...
-```
+   * `QBITTORRENT_HOST` (default: localhost)
+   * `QBITTORRENT_PORT` (default: 8080)
+   * `QBITTORRENT_USERNAME` (default: admin)
+   * `QBITTORRENT_PASSWORD` (default: adminadmin)
 
-### 4. Run the App
+2. **Configure proxy sources**
 
-```sh
-python app.py
-```
+   Edit `sources.txt` (one proxy-list URL per line). Preloaded with recommended public SOCKS5 lists.
 
-* Web UI launches at `http://localhost:4141/` (or server IP).
+3. **Run the server**
 
----
+   ```bash
+   python app.py
+   ```
 
-## Usage
+   Visit [http://localhost:4141](http://localhost:4141) (or your specified port) in your browser.
 
-* Click **"Update Proxies"** to fetch and test all available proxies.
-* Test results update live: green check for pass, red X for fail, gray ? for not yet tested.
-* Click any column header to sort by that result (e.g., fastest SOCKS5s, all passing, etc).
-* Click **"Set as Proxy"** to set the given proxy for qBittorrent.
-* Last check time and current qBittorrent status are shown at the top.
+4. **Using the dashboard**
 
----
+   * Update proxies (fetches new list, runs all tests)
+   * Sort/filter by column
+   * Click to set working proxy for qBittorrent (pushes directly via API)
+   * Retest or re-check any proxy
+   * Monitor progress and qBittorrent status live
 
-## Customization
+## File Overview
 
-* **Add/Remove proxy sources:** Edit `sources.txt`.
-* **Tune batch size:** Adjust `max_workers` in `ProxyManager.test_all_proxies` for more or fewer concurrent tests.
-* **Change qBittorrent integration:** See `qbittorrent_manager.py`.
-* **Change which tests run:** Edit `ProxyManager.test_proxy`.
+* `app.py`: Main Flask server
+* `proxy_manager.py`: Downloads, tests, caches proxies, scoring & sorting
+* `qbittorrent_manager.py`: Handles qBittorrent login, read/write proxy config
+* `scheduler.py`: Schedules retests, auto-updates, etc
+* `static/`: CSS, JS
+* `templates/`: HTML (Jinja2)
+* `sources.txt`: List of proxy sources
+* `.env` / `.env-sample`: Environment config (keep `.env` secret!)
+* `requirements.txt`: All Python dependencies
 
----
+## Security Notes
 
-## Dependencies
+* Keep your real `.env` **private**! Never commit it to a public repo.
+* Dashboard does not expose any admin or proxy-changing endpoint without authentication.
+* Proxy credentials are never shown or saved in browser.
 
-* Python 3.7+
-* Flask
-* Requests
-* python-dotenv
-* PySocks
-* schedule
+## Known Limitations & Roadmap
 
----
+* Currently tests only SOCKS5 public proxies; other proxy types or private proxies will require code changes
+* **Upcoming:**
 
-## Security Note
-
-This app is intended for personal or research use on your own infrastructure. Do **not** expose it to the public internet without access control!
-
----
-
-## License
-
-MIT or Unlicense (choose and edit accordingly)
-
----
-
-## Credits
-
-* Proxy source links courtesy of the open proxy-list community.
-* Original dashboard design and full-stack implementation: \[your name or handle here]
-
----
+  * Systemd/service support for running as a daemon
+  * Automatic periodic updating/retesting of proxy list (runs even if dashboard not open)
+  * Auto-rotate qBittorrent's proxy at intervals, or by measured performance
+  * Improved error/timing diagnostics and public test logs
 
 ## Troubleshooting
 
-* If all proxies fail except TCP, check your outbound firewall or proxy source reliability.
-* Ensure you are using **PySocks** (not old `SocksiPy_branch`), and dependencies are up to date.
-* To debug individual proxies, see `proxy_manager.py:test_proxy()`.
+* If all proxies fail except TCP, try again later or use a different list source
+* Check qBittorrent Web UI address/credentials match those in `.env`
+* If nothing loads, check for Python errors in the terminal, missing packages, or port conflicts
+* Windows: PySocks may require extra install: `pip install PySocks` (use `SocksiPy_branch` version)
+
+## Support
+
+Open an issue or request a feature in the repository.
 
 ---
+
+© 2025 Eric Zeigenbein / BlahPunk
