@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Proxy Switcher</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+    <div class="container">
+        <h1>Proxy Switcher</h1>
+        <p>Current qBittorrent Proxy: <span id="current-proxy">{{ current_proxy }}</span></p>
+        <p>Status: <span id="update-status">Idle</span></p>
+        <p>Last update: <span id="last-update"></span></p>
+        <button onclick="updateProxies()">Update Proxies</button>
+        <div class="table-container">
+            <table id="proxy-table">
+                <thead>
+                    <tr>
+                        <th>Proxy</th>
+                        <th>Status</th>
+                        <th>Last Checked</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Rows will be dynamically populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

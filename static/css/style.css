@@ -1,0 +1,86 @@
+/* Dark Theme Styles */
+
+body {
+    background-color: #121212;
+    color: #E0E0E0;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 90%;
+    margin: auto;
+    padding-top: 20px;
+}
+
+h1 {
+    text-align: center;
+    color: #BB86FC;
+}
+
+.table-container {
+    overflow-y: auto;
+    resize: vertical;
+    border: 1px solid #333;
+    min-height: 400px;  /* Ensure the container shows at least 15 rows */
+    max-height: 800px;  /* Allow resizing, but limit the maximum height */
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+}
+
+th {
+    background-color: #1F1B24;
+}
+
+tr:nth-child(even) {
+    background-color: #1E1E1E;
+}
+
+tr:hover {
+    background-color: #333333;
+}
+
+button {
+    background-color: #BB86FC;
+    border: none;
+    color: #121212;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+button:hover {
+    background-color: #9A67EA;
+}
+
+/* Status indicators */
+.status-active {
+    background-color: #28a745; /* Green */
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.status-inactive {
+    background-color: #dc3545; /* Red */
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.status-unknown {
+    background-color: #6c757d; /* Gray */
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+}
