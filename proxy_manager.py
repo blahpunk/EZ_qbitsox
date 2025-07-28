@@ -2,22 +2,24 @@ import requests
 import socket
 import logging
 import json
-from concurrent.futures import ThreadPoolExecutor
 import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-PROXY_SOURCES = [
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
-    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt",
-    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
-    "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
-]
-
 CACHE_FILE = "proxies_cache.json"
+SOURCES_FILE = "sources.txt"
+
+def load_proxy_sources(filename=SOURCES_FILE):
+    try:
+        with open(filename, 'r') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        logging.error(f"Proxy sources file '{filename}' not found.")
+        return []
 
 class ProxyManager:
-    def __init__(self):
+    def __init__(self, sources_file=SOURCES_FILE):
+        self.proxy_sources = load_proxy_sources(sources_file)
         self.proxies = {}  # Format: { 'ip:port': { 'status': 'Active/Inactive/Unknown', 'last_checked': 'timestamp' } }
         self.status = "Idle"
         self.last_update_timestamp = "Never"
@@ -47,13 +49,13 @@ class ProxyManager:
     def fetch_proxies(self):
         self.status = "Fetching proxies..."
         fetched_proxies = set()
-        for url in PROXY_SOURCES:
+        for url in self.proxy_sources:
             try:
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
                 proxies = response.text.strip().split('\n')
                 for proxy in proxies:
-                    if proxy not in self.proxies:
+                    if proxy and proxy not in self.proxies:
                         self.proxies[proxy] = {"status": "Unknown", "last_checked": None}
                 fetched_proxies.update(proxies)
                 logging.info(f"Fetched {len(proxies)} proxies from {url}")

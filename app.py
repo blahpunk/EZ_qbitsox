@@ -19,7 +19,7 @@ qb_pass = os.getenv('QBITTORRENT_PASSWORD')
 app = Flask(__name__)
 
 # Initialize managers
-proxy_manager = ProxyManager()
+proxy_manager = ProxyManager(sources_file='sources.txt')
 qb_manager = QBittorrentManager(
     host=qb_host, 
     port=qb_port,
