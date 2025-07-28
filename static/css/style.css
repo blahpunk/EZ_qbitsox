@@ -23,14 +23,24 @@ h1 {
     overflow-y: auto;
     resize: vertical;
     border: 1px solid #333;
-    min-height: 400px;  /* Ensure the container shows at least 15 rows */
-    max-height: 800px;  /* Allow resizing, but limit the maximum height */
+    min-height: 400px;
+    max-height: 800px;
+    background: #181a21;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
+}
+
+/* Sticky table header */
+table thead th {
+    position: sticky;
+    top: 0;
+    background-color: #24243a;  /* darker for contrast */
+    z-index: 2;
+    box-shadow: 0 2px 2px -1px #222;
 }
 
 th, td {

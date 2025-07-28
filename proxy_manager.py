@@ -3,6 +3,8 @@ import socket
 import logging
 import json
 import time
+import socks  # PySocks, install with: pip install PySocks
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -20,7 +22,7 @@ def load_proxy_sources(filename=SOURCES_FILE):
 class ProxyManager:
     def __init__(self, sources_file=SOURCES_FILE):
         self.proxy_sources = load_proxy_sources(sources_file)
-        self.proxies = {}  # Format: { 'ip:port': { 'status': 'Active/Inactive/Unknown', 'last_checked': 'timestamp' } }
+        self.proxies = {}  # { 'ip:port': { ...results... } }
         self.status = "Idle"
         self.last_update_timestamp = "Never"
         self.current_test_proxy = None
@@ -56,7 +58,15 @@ class ProxyManager:
                 proxies = response.text.strip().split('\n')
                 for proxy in proxies:
                     if proxy and proxy not in self.proxies:
-                        self.proxies[proxy] = {"status": "Unknown", "last_checked": None}
+                        # Initialize results for new proxy
+                        self.proxies[proxy] = {
+                            "tcp_connect": False,
+                            "socks5_handshake": False,
+                            "remote_connect": False,
+                            "dns_ok": False,
+                            "speed_ms": None,
+                            "last_checked": None
+                        }
                 fetched_proxies.update(proxies)
                 logging.info(f"Fetched {len(proxies)} proxies from {url}")
             except Exception as e:
@@ -65,24 +75,68 @@ class ProxyManager:
 
     def test_proxy(self, proxy):
         ip, port = proxy.split(':')
-        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        test_socket.settimeout(5)
-        try:
-            test_socket.connect((ip, int(port)))
-            self.proxies[proxy]["status"] = 'Active'
-        except:
-            self.proxies[proxy]["status"] = 'Inactive'
-        finally:
-            self.proxies[proxy]["last_checked"] = time.strftime('%Y-%m-%d %H:%M:%S')
-            test_socket.close()
+        port = int(port)
+        result = {
+            "tcp_connect": False,
+            "socks5_handshake": False,
+            "remote_connect": False,
+            "dns_ok": False,
+            "speed_ms": None,
+            "last_checked": time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        t0 = time.time()
 
-    def test_all_proxies(self):
+        # TCP Connect
+        try:
+            s = socket.create_connection((ip, port), timeout=5)
+            result["tcp_connect"] = True
+            s.close()
+        except Exception:
+            pass
+
+        # SOCKS5 handshake & relay check (using PySocks)
+        if result["tcp_connect"]:
+            try:
+                sock = socks.socksocket()
+                sock.set_proxy(socks.SOCKS5, ip, port)
+                sock.settimeout(7)
+                # Connect through proxy to public DNS server (1.1.1.1:53)
+                sock.connect(("1.1.1.1", 53))
+                result["socks5_handshake"] = True
+                result["remote_connect"] = True
+                try:
+                    # Basic DNS test: send minimal payload, expect no disconnect
+                    # (This does not send a valid DNS query, just checks we don't get instantly dropped)
+                    sock.sendall(b"\x00")
+                    result["dns_ok"] = True
+                except Exception:
+                    pass
+                sock.close()
+            except Exception:
+                pass
+
+        result["speed_ms"] = int((time.time() - t0) * 1000)
+        self.proxies[proxy].update(result)
+
+    def test_all_proxies(self, max_workers=5):
         self.total_proxies = len(self.proxies)
-        for idx, proxy in enumerate(self.proxies.keys(), 1):
+        sorted_keys = list(self.proxies.keys())
+        self.status = f"Testing {self.total_proxies} proxies with up to {max_workers} threads..."
+
+        def test_and_update(idx_proxy):
+            idx, proxy = idx_proxy
             self.current_test_proxy = proxy
-            self.current_test_index = idx
-            self.status = f"Testing proxy {idx} of {self.total_proxies}: {proxy}"
+            self.current_test_index = idx + 1
+            self.status = f"Testing proxy {idx+1} of {self.total_proxies}: {proxy}"
             self.test_proxy(proxy)
+            return proxy
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all proxies; each thread does one full test_proxy at a time
+            futures = [executor.submit(test_and_update, (idx, proxy)) for idx, proxy in enumerate(sorted_keys)]
+            for future in as_completed(futures):
+                pass  # Results already stored in self.proxies
+
         self.current_test_proxy = None
         self.current_test_index = 0
         self.total_proxies = 0
@@ -92,11 +146,13 @@ class ProxyManager:
         self.save_proxies()
 
     def sort_proxies(self):
-        # Sort proxies: Active first, then Inactive, then Unknown
-        def status_order(item):
-            s = item[1]["status"]
-            return 1 if s == "Active" else (2 if s == "Inactive" else 3)
-        self.proxies = dict(sorted(self.proxies.items(), key=status_order))
+        def score(item):
+            v = item[1]
+            return (
+                int(v.get("tcp_connect", False) and v.get("socks5_handshake", False) and v.get("remote_connect", False) and v.get("dns_ok", False)),
+                -(v.get("speed_ms") or 999999)
+            )
+        self.proxies = dict(sorted(self.proxies.items(), key=score, reverse=True))
 
     def update_proxies(self):
         self.fetch_proxies()
