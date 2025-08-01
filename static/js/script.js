@@ -15,7 +15,7 @@ function setProxy(proxy, rowIndex) {
                         document.getElementById('current-proxy').innerText = data.current_proxy;
                     });
                 alert(`Proxy set to ${proxy}`);
-                fetchQbConnectionStatus();  // Update the qBittorrent connection status
+                fetchQbConnectionStatus();
             } else {
                 alert('Failed to set proxy.');
             }
@@ -57,14 +57,14 @@ function fetchProxies() {
             const proxyTable = document.getElementById('proxy-table').getElementsByTagName('tbody')[0];
             proxyTable.innerHTML = '';
 
-            // Improved default sort: all tests passed, then some, then none; within each, by pass count and speed
+            // Sort as before
             const sortedProxies = Object.entries(proxies).sort((a, b) => {
                 function score(v) {
                     const tests = ['tcp_connect', 'socks5_handshake', 'remote_connect', 'dns_ok'];
                     const passCount = tests.reduce((n, k) => n + (v[k] ? 1 : 0), 0);
                     const allPass = passCount === tests.length ? 2 : (passCount > 0 ? 1 : 0);
-                    let speed = v.speed_ms === null ? 999999 : v.speed_ms;
-                    return [allPass, passCount, -speed];
+                    let bandwidth = v.bandwidth_kbps === null ? 0 : v.bandwidth_kbps;
+                    return [allPass, passCount, bandwidth];
                 }
                 const av = score(a[1]), bv = score(b[1]);
                 for (let i = 0; i < av.length; ++i) {
@@ -73,7 +73,9 @@ function fetchProxies() {
                 return 0;
             });
 
-            sortedProxies.forEach(([proxy, details], index) => {
+            // *** LIMIT the proxies shown ***
+            const MAX_ROWS = 1000;
+            sortedProxies.slice(0, MAX_ROWS).forEach(([proxy, details], index) => {
                 row = proxyTable.insertRow(index);
                 row.innerHTML = `
                     <td>${proxy}</td>
@@ -81,7 +83,7 @@ function fetchProxies() {
                     <td>${iconCell(details.socks5_handshake)}</td>
                     <td>${iconCell(details.remote_connect)}</td>
                     <td>${iconCell(details.dns_ok)}</td>
-                    <td>${details.speed_ms !== null ? details.speed_ms : ''}</td>
+                    <td>${details.bandwidth_kbps !== null ? details.bandwidth_kbps : ''}</td>
                     <td>${details.last_checked ? details.last_checked : 'Never'}</td>
                     <td>
                         <button onclick="setProxy('${proxy}', ${index})">Set as Proxy</button>
@@ -97,6 +99,7 @@ function fetchProxies() {
             console.error('Error:', error);
         });
 }
+
 
 function retestProxy(proxy, rowIndex) {
     fetch(`/retest_proxy/${proxy}`)
@@ -195,8 +198,8 @@ function enableColumnSorting() {
                 const testScore = t => t.includes('✔') ? 2 : t.includes('✖') ? 1 : 0;
                 v1 = testScore(v1); v2 = testScore(v2);
             }
-            if (colIdx === 5) { // Speed
-                v1 = parseInt(v1) || 999999; v2 = parseInt(v2) || 999999;
+            if (colIdx === 5) { // Bandwidth (KB/s)
+                v1 = parseFloat(v1) || 0; v2 = parseFloat(v2) || 0;
             }
             if (!isNaN(v1) && !isNaN(v2)) return asc ? v1 - v2 : v2 - v1;
             return asc ? v1.localeCompare(v2) : v2.localeCompare(v1);

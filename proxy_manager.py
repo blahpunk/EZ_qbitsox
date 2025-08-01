@@ -5,11 +5,14 @@ import json
 import time
 import socks  # PySocks, install with: pip install PySocks
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 CACHE_FILE = "proxies_cache.json"
 SOURCES_FILE = "sources.txt"
+BANDWIDTH_TEST_URL = "http://speedtest.tele2.net/1MB.zip"  # 1MB file
+BANDWIDTH_TEST_SIZE = 1024 * 1024  # 1MB in bytes
 
 def load_proxy_sources(filename=SOURCES_FILE):
     try:
@@ -38,6 +41,8 @@ class ProxyManager:
                 logging.info("Loaded proxies from cache")
         except FileNotFoundError:
             logging.info("No cache file found, starting fresh")
+            self.proxies = {}
+            self.last_update_timestamp = "Never"
 
     def save_proxies(self):
         cache = {
@@ -55,22 +60,32 @@ class ProxyManager:
             try:
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
-                proxies = response.text.strip().split('\n')
-                for proxy in proxies:
-                    if proxy and proxy not in self.proxies:
-                        # Initialize results for new proxy
+                lines = response.text.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    match = re.match(r'^(socks5://|socks4://|http://|https://)?(.+)$', line, re.IGNORECASE)
+                    if match:
+                        proxy = match.group(2)
+                    else:
+                        proxy = line
+                    if not re.match(r'^\d{1,3}(\.\d{1,3}){3}:\d+$', proxy):
+                        continue
+                    if proxy not in self.proxies:
                         self.proxies[proxy] = {
                             "tcp_connect": False,
                             "socks5_handshake": False,
                             "remote_connect": False,
                             "dns_ok": False,
-                            "speed_ms": None,
+                            "bandwidth_kbps": None,
                             "last_checked": None
                         }
-                fetched_proxies.update(proxies)
-                logging.info(f"Fetched {len(proxies)} proxies from {url}")
+                    fetched_proxies.add(proxy)
             except Exception as e:
                 logging.error(f"Error fetching proxies from {url}: {e}")
+        # *** Save after fetching, before testing! ***
+        self.save_proxies()
         self.status = "Testing proxies..."
 
     def test_proxy(self, proxy):
@@ -81,10 +96,9 @@ class ProxyManager:
             "socks5_handshake": False,
             "remote_connect": False,
             "dns_ok": False,
-            "speed_ms": None,
+            "bandwidth_kbps": None,
             "last_checked": time.strftime('%Y-%m-%d %H:%M:%S')
         }
-        t0 = time.time()
 
         # TCP Connect
         try:
@@ -100,13 +114,10 @@ class ProxyManager:
                 sock = socks.socksocket()
                 sock.set_proxy(socks.SOCKS5, ip, port)
                 sock.settimeout(7)
-                # Connect through proxy to public DNS server (1.1.1.1:53)
                 sock.connect(("1.1.1.1", 53))
                 result["socks5_handshake"] = True
                 result["remote_connect"] = True
                 try:
-                    # Basic DNS test: send minimal payload, expect no disconnect
-                    # (This does not send a valid DNS query, just checks we don't get instantly dropped)
                     sock.sendall(b"\x00")
                     result["dns_ok"] = True
                 except Exception:
@@ -115,7 +126,28 @@ class ProxyManager:
             except Exception:
                 pass
 
-        result["speed_ms"] = int((time.time() - t0) * 1000)
+        # Bandwidth test (real download) - only if SOCKS5 handshake succeeded
+        if result["socks5_handshake"]:
+            try:
+                session = requests.Session()
+                session.proxies = {
+                    "http": f"socks5://{ip}:{port}",
+                    "https": f"socks5://{ip}:{port}",
+                }
+                t0 = time.time()
+                resp = session.get(BANDWIDTH_TEST_URL, timeout=15, stream=True)
+                total_bytes = 0
+                for chunk in resp.iter_content(8192):
+                    total_bytes += len(chunk)
+                    if total_bytes >= BANDWIDTH_TEST_SIZE:
+                        break
+                elapsed = time.time() - t0
+                if total_bytes > 0 and elapsed > 0:
+                    kbps = (total_bytes / 1024) / elapsed
+                    result["bandwidth_kbps"] = round(kbps, 1)
+            except Exception:
+                result["bandwidth_kbps"] = None
+
         self.proxies[proxy].update(result)
 
     def test_all_proxies(self, max_workers=5):
@@ -132,10 +164,9 @@ class ProxyManager:
             return proxy
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all proxies; each thread does one full test_proxy at a time
             futures = [executor.submit(test_and_update, (idx, proxy)) for idx, proxy in enumerate(sorted_keys)]
             for future in as_completed(futures):
-                pass  # Results already stored in self.proxies
+                pass
 
         self.current_test_proxy = None
         self.current_test_index = 0
@@ -148,10 +179,10 @@ class ProxyManager:
     def sort_proxies(self):
         def score(item):
             v = item[1]
-            return (
-                int(v.get("tcp_connect", False) and v.get("socks5_handshake", False) and v.get("remote_connect", False) and v.get("dns_ok", False)),
-                -(v.get("speed_ms") or 999999)
-            )
+            # Sort: all tests passed, then by bandwidth (descending)
+            all_pass = int(v.get("tcp_connect") and v.get("socks5_handshake") and v.get("remote_connect") and v.get("dns_ok"))
+            bandwidth = v.get("bandwidth_kbps") or 0
+            return (all_pass, bandwidth)
         self.proxies = dict(sorted(self.proxies.items(), key=score, reverse=True))
 
     def update_proxies(self):

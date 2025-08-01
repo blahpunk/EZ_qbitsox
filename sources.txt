@@ -2,3 +2,11 @@ https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt
 https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt
 https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt
 https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt
+https://raw.githubusercontent.com/roosterkid/openproxylist/7f81d7e1853389bf70b58edeefa87acefac29ae7/SOCKS5_RAW.txt
+https://raw.githubusercontent.com/jetkai/proxy-list/refs/heads/main/online-proxies/txt/proxies-socks5.txt
+https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt
+https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/refs/heads/main/proxylist.txt
+https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/refs/heads/main/socks5_checked.txt
+https://raw.githubusercontent.com/iplocate/free-proxy-list/refs/heads/main/all-proxies.txt
+https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/refs/heads/main/socks5-proxy-list-by-EbraSha.txt
+https://raw.githubusercontent.com/roosterkid/openproxylist/7f81d7e1853389bf70b58edeefa87acefac29ae7/SOCKS5_RAW.txt
