@@ -75,7 +75,7 @@ class QBittorrentManager:
             # Update just the proxy-related fields
             # For SOCKS5
             prefs.update({
-                'proxy_type': "SOCKS5",   # Set as string
+                'proxy_type': 3,   # Set as string
                 'proxy_ip': ip,
                 'proxy_port': port,
                 'proxy_peer_connections': True,

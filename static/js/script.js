@@ -30,14 +30,14 @@ function updateProxies() {
     const proxyTable = document.getElementById('proxy-table').getElementsByTagName('tbody')[0];
     proxyTable.innerHTML = '';
     const loadingRow = proxyTable.insertRow(0);
-    loadingRow.innerHTML = `<td colspan="8">Updating proxies, please wait...</td>`;
+    loadingRow.innerHTML = `<td colspan="10">Updating proxies, please wait...</td>`;
 
     fetch('/update_proxies')
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                alert('Proxies updated successfully!');
-                fetchProxies();
+                // Wait a few seconds before fetching, since update runs in background
+                setTimeout(fetchProxies, 5000);
             } else {
                 alert('Failed to update proxies.');
             }
@@ -64,7 +64,8 @@ function fetchProxies() {
                     const passCount = tests.reduce((n, k) => n + (v[k] ? 1 : 0), 0);
                     const allPass = passCount === tests.length ? 2 : (passCount > 0 ? 1 : 0);
                     let bandwidth = v.bandwidth_kbps === null ? 0 : v.bandwidth_kbps;
-                    return [allPass, passCount, bandwidth];
+                    let trackerScore = ((v.tracker_tcp_ok ? 1 : 0) + (v.tracker_udp_ok ? 1 : 0));
+                    return [allPass, trackerScore, passCount, bandwidth];
                 }
                 const av = score(a[1]), bv = score(b[1]);
                 for (let i = 0; i < av.length; ++i) {
@@ -84,6 +85,8 @@ function fetchProxies() {
                     <td>${iconCell(details.remote_connect)}</td>
                     <td>${iconCell(details.dns_ok)}</td>
                     <td>${details.bandwidth_kbps !== null ? details.bandwidth_kbps : ''}</td>
+                    <td>${iconCell(details.tracker_tcp_ok)}</td>
+                    <td>${iconCell(details.tracker_udp_ok)}</td>
                     <td>${details.last_checked ? details.last_checked : 'Never'}</td>
                     <td>
                         <button onclick="setProxy('${proxy}', ${index})">Set as Proxy</button>
@@ -194,7 +197,7 @@ function enableColumnSorting() {
             let v1 = a.cells[colIdx].textContent.trim();
             let v2 = b.cells[colIdx].textContent.trim();
             // For icon columns: check mark, X, or ? to numeric
-            if ([1,2,3,4].includes(colIdx)) {
+            if ([1,2,3,4,6,7].includes(colIdx)) {
                 const testScore = t => t.includes('✔') ? 2 : t.includes('✖') ? 1 : 0;
                 v1 = testScore(v1); v2 = testScore(v2);
             }
