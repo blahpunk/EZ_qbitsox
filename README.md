@@ -1,112 +1,100 @@
-# Proxy Switcher Dashboard with qBittorrent Integration
+# EZ_qbitsox
 
-![App Screenshot](screenshots/Screenshot_2025-07-28_00-43-14.png)
+Flask dashboard for fetching SOCKS5 proxies, running multi-step health tests, and applying a selected proxy to qBittorrent Web UI.
 
-A Flask-based dashboard for downloading, testing, and managing SOCKS5 proxies. Provides live testing for multiple proxy criteria, sortable web UI, and push-to-qBittorrent proxy rotation.
+## What It Does
 
-## Features
+- Pulls proxy candidates from multiple remote source lists.
+- Normalizes and deduplicates proxy entries.
+- Runs layered validation:
+  - TCP connect
+  - SOCKS5 handshake
+  - Remote connect
+  - DNS test
+  - HTTP/HTTPS checks through SOCKS5
+  - Optional bandwidth/tracker checks
+- Displays sortable results in a browser UI.
+- Applies selected proxy to qBittorrent via Web API.
+- Supports periodic background refresh/retest with scheduler.
 
-* Fetches SOCKS5 proxy lists from configurable sources
-* Runs detailed, multi-step proxy health checks (TCP, SOCKS5 handshake, remote connect, DNS)
-* Displays sortable, sticky-table results in browser
-* Allows one-click proxy selection for qBittorrent Web UI
-* Tracks and caches test results with timestamp and speed
-* Background scheduler for auto-refreshing and retesting proxies
-* Environment-variable driven (no plaintext credentials)
-* Ready for service/daemon operation
+## Security Changes (Current Update)
+
+- Removed hardcoded qBittorrent credentials from code defaults.
+- `.env-sample` now uses `CHANGE_ME` placeholders.
+- Added comprehensive `.gitignore` rules for:
+  - secrets (`.env*`)
+  - generated caches/results
+  - backups, screenshots, wheels, build outputs
 
 ## Requirements
 
-* Python 3.8+
-* [qBittorrent](https://www.qbittorrent.org/) with Web UI enabled
-* Flask
-* Requests
-* PySocks (`SocksiPy_branch`)
-* python-dotenv
-* schedule
+- Python 3.8+
+- qBittorrent with Web UI enabled
+- See [requirements.txt](/PiDrive/_Functional Tools/EZ_qbitsox/requirements.txt)
 
-Install requirements:
+Install:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-## Quick Start
+## Configuration
 
-1. **Copy and configure environment**
+1. Copy sample env:
 
-   Use the included `.env-sample` to create your real `.env`:
+```bash
+cp .env-sample .env
+```
 
-   ```bash
-   cp .env-sample .env
-   ```
+2. Edit `.env` with your actual qBittorrent credentials:
 
-   Edit `.env` to match your qBittorrent Web UI instance:
+```env
+QBITTORRENT_HOST=localhost
+QBITTORRENT_PORT=7070
+QBITTORRENT_USERNAME=your_username
+QBITTORRENT_PASSWORD=your_password
+```
 
-   * `QBITTORRENT_HOST` (default: localhost)
-   * `QBITTORRENT_PORT` (default: 8080)
-   * `QBITTORRENT_USERNAME` (default: admin)
-   * `QBITTORRENT_PASSWORD` (default: adminadmin)
+3. Edit [sources.txt](/PiDrive/_Functional Tools/EZ_qbitsox/sources.txt) (one proxy-list URL per line).
 
-2. **Configure proxy sources**
+## Run
 
-   Edit `sources.txt` (one proxy-list URL per line). Preloaded with recommended public SOCKS5 lists.
+```bash
+python app.py
+```
 
-3. **Run the server**
+Open:
 
-   ```bash
-   python app.py
-   ```
+`http://localhost:4141`
 
-   Visit [http://localhost:4141](http://localhost:4141) (or your specified port) in your browser.
+## Project Layout
 
-4. **Using the dashboard**
+- [app.py](/PiDrive/_Functional Tools/EZ_qbitsox/app.py): Flask routes and app orchestration
+- [proxy_manager.py](/PiDrive/_Functional Tools/EZ_qbitsox/proxy_manager.py): proxy fetch/test/cache logic
+- [qbittorrent_manager.py](/PiDrive/_Functional Tools/EZ_qbitsox/qbittorrent_manager.py): qBittorrent API auth and proxy apply
+- [scheduler.py](/PiDrive/_Functional Tools/EZ_qbitsox/scheduler.py): periodic background jobs
+- [templates/index.html](/PiDrive/_Functional Tools/EZ_qbitsox/templates/index.html): UI template
+- [static/js/script.js](/PiDrive/_Functional Tools/EZ_qbitsox/static/js/script.js): front-end behavior
+- [static/css/style.css](/PiDrive/_Functional Tools/EZ_qbitsox/static/css/style.css): styling
 
-   * Update proxies (fetches new list, runs all tests)
-   * Sort/filter by column
-   * Click to set working proxy for qBittorrent (pushes directly via API)
-   * Retest or re-check any proxy
-   * Monitor progress and qBittorrent status live
+## Operational Notes
 
-## File Overview
-
-* `app.py`: Main Flask server
-* `proxy_manager.py`: Downloads, tests, caches proxies, scoring & sorting
-* `qbittorrent_manager.py`: Handles qBittorrent login, read/write proxy config
-* `scheduler.py`: Schedules retests, auto-updates, etc
-* `static/`: CSS, JS
-* `templates/`: HTML (Jinja2)
-* `sources.txt`: List of proxy sources
-* `.env` / `.env-sample`: Environment config (keep `.env` secret!)
-* `requirements.txt`: All Python dependencies
-
-## Security Notes
-
-* Keep your real `.env` **private**! Never commit it to a public repo.
-* Dashboard does not expose any admin or proxy-changing endpoint without authentication.
-* Proxy credentials are never shown or saved in browser.
-
-## Known Limitations & Roadmap
-
-* Currently tests only SOCKS5 public proxies; other proxy types or private proxies will require code changes
-* **Upcoming:**
-
-  * Systemd/service support for running as a daemon
-  * Automatic periodic updating/retesting of proxy list (runs even if dashboard not open)
-  * Auto-rotate qBittorrent's proxy at intervals, or by measured performance
-  * Improved error/timing diagnostics and public test logs
+- Keep `.env` local and private.
+- Do not commit generated proxy result files.
+- Validate source URLs periodically; public proxy feeds change frequently.
+- Many public proxies are unstable; repeated failures are expected.
 
 ## Troubleshooting
 
-* If all proxies fail except TCP, try again later or use a different list source
-* Check qBittorrent Web UI address/credentials match those in `.env`
-* If nothing loads, check for Python errors in the terminal, missing packages, or port conflicts
-* Windows: PySocks may require extra install: `pip install PySocks` (use `SocksiPy_branch` version)
+- `Missing qBittorrent credentials`:
+  - Ensure `.env` exists and has `QBITTORRENT_USERNAME` / `QBITTORRENT_PASSWORD`.
+- qBittorrent connection/auth failures:
+  - Verify host/port and Web UI credentials.
+  - Confirm Web UI is enabled in qBittorrent.
+- No proxies displayed:
+  - Check source URL availability.
+  - Check network access and logs.
 
-## Support
+## License
 
-Open an issue or request a feature in the repository.
-
----
-
-© 2025 Eric Zeigenbein / BlahPunk
+MIT (see [LICENSE](/PiDrive/_Functional Tools/EZ_qbitsox/LICENSE) if present in your branch/repo context).

@@ -1,125 +1,142 @@
+# qbittorrent_manager.py
+
 import requests
 import logging
 import socket
-import json  # Make sure to add this import
+import json
+import time
 
 class QBittorrentManager:
-    def __init__(self, host='localhost', port=7070, username='admin', password='870621345a'):
+    def __init__(self, host='localhost', port=7070, username=None, password=None):
         self.base_url = f'http://{host}:{port}'
         self.api_url = f'{self.base_url}/api/v2'
         self.session = requests.Session()
         self.username = username
         self.password = password
         self.logged_in = False
+        self.last_login_attempt = 0
+        self.login_interval = 10
         self.login()
 
+    # ---------- AUTH ---------- #
     def login(self):
+        if not self.username or not self.password:
+            logging.error("Missing qBittorrent credentials. Set QBITTORRENT_USERNAME and QBITTORRENT_PASSWORD in .env.")
+            self.logged_in = False
+            return False
         try:
-            response = self.session.post(
+            r = self.session.post(
                 f"{self.api_url}/auth/login",
                 data={'username': self.username, 'password': self.password},
                 timeout=10
             )
-            if response.text == "Ok.":
+            if r.text.strip() == "Ok.":
                 self.logged_in = True
-                logging.info("Successfully logged in to qBittorrent Web UI")
+                logging.info("qBittorrent login OK")
                 return True
-            logging.error(f"Login failed. Response: {response.text}")
-            return False
         except Exception as e:
-            logging.error(f"Login exception: {str(e)}")
-            return False
+            logging.error(f"Login exception: {e}")
+        self.logged_in = False
+        return False
 
+    def _check_auth(self):
+        if self.logged_in:
+            try:
+                if self.session.get(f"{self.api_url}/app/version", timeout=5).ok:
+                    return True
+            except Exception:
+                pass
+        if time.time() - self.last_login_attempt > self.login_interval:
+            self.last_login_attempt = time.time()
+            logging.info("Session invalid, attempting re-login…")
+            return self.login()
+        return False
+
+    def _get(self, path):
+        self._check_auth()
+        r = self.session.get(f"{self.api_url}{path}", timeout=10)
+        if r.status_code in (401, 403) and self.login():
+            r = self.session.get(f"{self.api_url}{path}", timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path, data):
+        self._check_auth()
+        r = self.session.post(f"{self.api_url}{path}", data=data, timeout=10)
+        if r.status_code in (401, 403) and self.login():
+            r = self.session.post(f"{self.api_url}{path}", data=data, timeout=10)
+        r.raise_for_status()
+        return r
+
+    # ---------- CORE ---------- #
     def get_current_proxy(self):
-        if not self._check_auth():
-            return "Error: Not authenticated"
-            
         try:
-            response = self.session.get(f"{self.api_url}/app/preferences")
-            response.raise_for_status()
-            prefs = response.json()
-            
-            if prefs.get('proxy_type') == 0:  # 0 means no proxy
+            prefs = self._get("/app/preferences")
+            ptype = prefs.get("proxy_type")
+            if ptype in ("None", None, "", 0, -1):
                 return "No proxy configured"
-                
-            proxy_ip = prefs.get('proxy_ip', '')
-            proxy_port = prefs.get('proxy_port', '')
-            return f"{proxy_ip}:{proxy_port}" if proxy_ip and proxy_port else "Invalid proxy config"
-            
+            ip = prefs.get("proxy_ip", "")
+            port = prefs.get("proxy_port", "")
+            return f"{ip}:{port}" if ip and port else "Invalid proxy config"
         except Exception as e:
-            logging.error(f"Error getting proxy settings: {str(e)}")
+            logging.error(f"get_current_proxy error: {e}")
             return "Error"
 
     def set_proxy(self, proxy):
-        if not self._check_auth():
+        if ":" not in proxy:
+            logging.error(f"Invalid proxy format: {proxy}")
             return False
+        ip, port_s = proxy.split(":", 1)
+        if not port_s.isdigit():
+            logging.error(f"Invalid port: {port_s}")
+            return False
+        port = int(port_s)
 
         try:
-            # Validate proxy format
-            if ':' not in proxy:
-                logging.error(f"Invalid proxy format (missing port): {proxy}")
-                return False
-
-            ip, port = proxy.split(':')
-            if not port.isdigit():
-                logging.error(f"Invalid port number: {port}")
-                return False
-
-            port = int(port)
-
-            # Fetch full preferences first!
-            resp = self.session.get(f"{self.api_url}/app/preferences")
-            resp.raise_for_status()
-            prefs = resp.json()
-
-            # Update just the proxy-related fields
-            # For SOCKS5
+            prefs = self._get("/app/preferences")
             prefs.update({
-                'proxy_type': 3,   # Set as string
-                'proxy_ip': ip,
-                'proxy_port': port,
-                'proxy_peer_connections': True,
-                'proxy_torrents_only': False,
-                'proxy_auth_enabled': False,
-                'force_proxy': True
+                "proxy_type": "SOCKS5",           # <-- string, not numeric
+                "proxy_ip": ip,
+                "proxy_port": port,
+                "proxy_auth_enabled": False,
+                "proxy_username": "",
+                "proxy_password": "",
+                "proxy_peer_connections": True,
+                "proxy_torrents_only": False,
+                "proxy_hostname_lookup": True,
+                "proxy_bittorrent": True,
+                "proxy_misc": True,
+                "proxy_rss": True,
+                "force_proxy": True,
+                "anonymous_mode": False
             })
 
+            self._post("/app/setPreferences", data={'json': json.dumps(prefs)})
 
-            # Now send the ENTIRE updated prefs back
-            set_resp = self.session.post(
-                f"{self.api_url}/app/setPreferences",
-                data={'json': json.dumps(prefs)}
-            )
-
-            if set_resp.status_code == 200:
-                logging.info(f"Successfully set proxy to {ip}:{port}")
+            verify = self._get("/app/preferences")
+            if (
+                verify.get("proxy_type") == "SOCKS5"
+                and verify.get("proxy_ip") == ip
+                and str(verify.get("proxy_port")) == str(port)
+            ):
+                logging.info(f"Proxy successfully set SOCKS5 {ip}:{port}")
                 return True
             else:
-                logging.error(f"Failed to set proxy. Status: {set_resp.status_code}, Response: {set_resp.text}")
+                logging.error(f"Proxy not applied, verify shows: {verify.get('proxy_type')}")
                 return False
 
         except Exception as e:
-            logging.error(f"Error setting proxy: {str(e)}")
+            logging.error(f"set_proxy error: {e}")
             return False
 
-
     def test_current_proxy_connection(self):
-        current_proxy = self.get_current_proxy()
-        if not current_proxy or ":" not in current_proxy:
-            return current_proxy
-            
+        current = self.get_current_proxy()
+        if ":" not in current:
+            return current
         try:
-            ip, port = current_proxy.split(':')
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
-                s.connect((ip, int(port)))
+            ip, port = current.split(":", 1)
+            with socket.create_connection((ip, int(port)), timeout=5):
                 return "Active"
         except Exception as e:
-            logging.error(f"Proxy connection test failed: {str(e)}")
+            logging.error(f"Proxy test failed: {e}")
             return "Inactive"
-
-    def _check_auth(self):
-        if not self.logged_in:
-            logging.info("Session not authenticated, attempting login...")
-            return self.login()
-        return True

@@ -1,15 +1,58 @@
-# Node
-node_modules/
-npm-debug.log*
-
-# Python
-__pycache__/
-*.pyc
-
-# Env files
+# ----------------------------
+# Environment / secrets
+# ----------------------------
 .env
 .env.*
+!.env-sample
 
-# macOS/Linux/Windows
+# ----------------------------
+# Python
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# ----------------------------
+# Local runtime / generated data
+# ----------------------------
+proxies_cache.json
+*.bak
+*.tmp
+*.log
+
+# Generated proxy source/result files
+soxlist*.txt
+soxlist*.csv
+socks5-*.txt
+
+# ----------------------------
+# Build / dependency artifacts
+# ----------------------------
+node_modules/
+npm-debug.log*
+*.whl
+dist/
+build/
+
+# ----------------------------
+# Local-only folders
+# ----------------------------
+backup/
+New Folder/
+screenshots/
+
+# ----------------------------
+# OS / editor noise
+# ----------------------------
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
