@@ -1,255 +1,296 @@
-// static/js/script.js
+const state = {
+    initialSettingsLoaded: false,
+    theme: 'light',
+};
 
-let currentSort = { idx: null, asc: false }; // Preserve sorting across refreshes
-
-function iconCell(passed) {
-    if (passed === true) return '<span style="color: #28a745; font-size:1.2em;">&#10004;</span>';
-    if (passed === false) return '<span style="color: #dc3545; font-size:1.2em;">&#10006;</span>';
-    return '<span style="color: #6c757d; font-size:1.2em;">?</span>';
+function el(id) {
+    return document.getElementById(id);
 }
 
-function setProxyQB(proxy, rowIndex) {
-    fetch(`/set_proxy/${proxy}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                updateCurrentProxies();
-                alert(`qBittorrent proxy set to ${proxy}`);
-                fetchQbConnectionStatus();
-            } else {
-                alert('Failed to set qBittorrent proxy.');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while setting the qBittorrent proxy.');
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function showAction(message, isError = false) {
+    const node = el('action-message');
+    node.textContent = message;
+    node.className = isError ? 'error' : 'muted';
+}
+
+function showQbTestResult(message, isError = false) {
+    const node = el('qb-test-result');
+    node.textContent = message;
+    node.className = isError ? 'error' : 'muted';
+}
+
+function setTheme(theme) {
+    const safeTheme = theme === 'dark' ? 'dark' : 'light';
+    state.theme = safeTheme;
+    document.documentElement.setAttribute('data-theme', safeTheme);
+    localStorage.setItem('ez_qbitsox_theme', safeTheme);
+}
+
+function initTheme() {
+    const saved = localStorage.getItem('ez_qbitsox_theme');
+    if (saved === 'dark' || saved === 'light') {
+        setTheme(saved);
+        return;
+    }
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(prefersDark ? 'dark' : 'light');
+}
+
+function settingsPayloadFromForm() {
+    return {
+        qbittorrent: {
+            host: el('qb-host').value.trim(),
+            port: Number(el('qb-port').value),
+            username: el('qb-username').value.trim(),
+            password: el('qb-password').value,
+        },
+        service: {
+            scan_interval_minutes: Number(el('scan-interval').value),
+            retest_after_minutes: Number(el('retest-age').value),
+            max_workers: Number(el('max-workers').value),
+            connect_timeout_seconds: Number(el('socket-timeout').value),
+            source_timeout_seconds: Number(el('source-timeout').value),
+        },
+        auto_apply: {
+            enabled: el('auto-enabled').checked,
+            interval_minutes: Number(el('auto-interval').value),
+        },
+    };
+}
+
+function applySettingsToForm(settings) {
+    const qb = settings.qbittorrent || {};
+    const service = settings.service || {};
+    const autoApply = settings.auto_apply || {};
+
+    el('qb-host').value = qb.host || '';
+    el('qb-port').value = qb.port || 8080;
+    el('qb-username').value = qb.username || '';
+    el('qb-password').value = '';
+    el('qb-password').placeholder = qb.password_set ? 'Stored securely (leave blank to keep)' : 'Set password';
+
+    el('scan-interval').value = service.scan_interval_minutes || 30;
+    el('retest-age').value = service.retest_after_minutes || 180;
+    el('max-workers').value = service.max_workers || 50;
+    el('socket-timeout').value = service.connect_timeout_seconds || 7;
+    el('source-timeout').value = service.source_timeout_seconds || 20;
+
+    el('auto-enabled').checked = Boolean(autoApply.enabled);
+    el('auto-interval').value = autoApply.interval_minutes || 60;
+}
+
+function renderService(snapshot) {
+    const service = snapshot.service || {};
+    const scan = snapshot.scan || {};
+    const counts = snapshot.counts || {};
+    const autoApply = snapshot.auto_apply || {};
+
+    el('service-state').textContent = service.status || '-';
+    el('service-stage').textContent = service.stage || '-';
+
+    const progress = service.progress || { tested: 0, total: 0 };
+    el('service-progress').textContent = `${progress.tested || 0}/${progress.total || 0}`;
+    el('scan-paused').textContent = scan.paused ? 'yes' : 'no';
+    el('scan-current-proxy').textContent = scan.current_proxy || '-';
+
+    el('count-known').textContent = counts.known_proxies ?? 0;
+    el('count-passed').textContent = counts.passed_proxies ?? 0;
+    el('last-started').textContent = service.last_run_started || '-';
+    el('last-finished').textContent = service.last_run_finished || '-';
+    el('next-run').textContent = service.next_run_at || '-';
+    el('service-error').textContent = service.last_error || '-';
+
+    el('last-auto').textContent = autoApply.last_applied_at || '-';
+    el('last-applied-proxy').textContent = autoApply.last_applied_proxy || '-';
+
+    const qbStatus = snapshot.qbittorrent_status === 'ok' ? '' : ' (connection issue)';
+    el('qb-current').textContent = `qBittorrent current proxy: ${snapshot.qbittorrent_current_proxy || '-'}${qbStatus}`;
+
+    el('service-summary').textContent =
+        `Status: ${service.status || '-'} | Stage: ${service.stage || '-'} | Passed proxies: ${counts.passed_proxies ?? 0}`;
+}
+
+function renderProxies(proxies) {
+    const body = el('proxies-body');
+    if (!Array.isArray(proxies) || proxies.length === 0) {
+        body.innerHTML = '<tr><td colspan="5">No fully passed proxies yet.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = proxies.map((entry) => {
+        const latency = entry.latency_ms !== null && entry.latency_ms !== undefined ? entry.latency_ms : '-';
+        const sourceCount = Array.isArray(entry.sources) ? entry.sources.length : 0;
+        const proxyEscaped = escapeHtml(entry.proxy);
+        return `<tr>
+            <td>${proxyEscaped}</td>
+            <td>${latency}</td>
+            <td>${escapeHtml(entry.last_tested || '-')}</td>
+            <td>${sourceCount}</td>
+            <td><button class="apply-proxy" data-proxy="${proxyEscaped}">Apply</button></td>
+        </tr>`;
+    }).join('');
+}
+
+async function fetchState() {
+    try {
+        const response = await fetch('/api/state');
+        const snapshot = await response.json();
+
+        renderService(snapshot);
+        renderProxies(snapshot.passed_proxies || []);
+
+        if (!state.initialSettingsLoaded) {
+            applySettingsToForm(snapshot.settings || {});
+            state.initialSettingsLoaded = true;
+        }
+    } catch (error) {
+        showAction(`Failed to fetch state: ${error}`, true);
+    }
+}
+
+async function saveSettings(event) {
+    event.preventDefault();
+
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settingsPayloadFromForm()),
         });
+
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showAction(data.message || 'Failed to save settings', true);
+            return;
+        }
+
+        showAction(data.message || 'Settings saved');
+        applySettingsToForm(data.settings || {});
+        await fetchState();
+    } catch (error) {
+        showAction(`Failed to save settings: ${error}`, true);
+    }
 }
 
-function setProxyFF(proxy, rowIndex) {
-    fetch(`/set_firefox_proxy/${proxy}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                updateCurrentProxies();
-                alert(`Firefox proxy set to ${proxy}`);
-            } else {
-                alert('Failed to set Firefox proxy.');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while setting the Firefox proxy.');
+async function runNow() {
+    try {
+        const response = await fetch('/api/run-now', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showAction(data.message || 'Failed to trigger update', true);
+            return;
+        }
+        showAction(data.message || 'Update started');
+        await fetchState();
+    } catch (error) {
+        showAction(`Failed to trigger update: ${error}`, true);
+    }
+}
+
+async function postSimpleAction(endpoint, successFallback) {
+    try {
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showAction(data.message || 'Action failed', true);
+            return;
+        }
+        showAction(data.message || successFallback);
+        await fetchState();
+    } catch (error) {
+        showAction(`Action failed: ${error}`, true);
+    }
+}
+
+async function testQbConnection() {
+    try {
+        const response = await fetch('/api/qb/test', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showQbTestResult(data.message || 'qBittorrent connection test failed', true);
+            return;
+        }
+
+        const version = data.version ? ` | version ${data.version}` : '';
+        const currentProxy = data.current_proxy ? ` | proxy: ${data.current_proxy}` : '';
+        showQbTestResult(`${data.message || 'qBittorrent connection OK'}${version}${currentProxy}`);
+        await fetchState();
+    } catch (error) {
+        showQbTestResult(`qBittorrent connection test failed: ${error}`, true);
+    }
+}
+
+async function applyBest() {
+    try {
+        const response = await fetch('/api/proxy/apply-best', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showAction(data.message || 'Failed to apply best proxy', true);
+            return;
+        }
+        showAction(data.message || 'Best proxy applied');
+        await fetchState();
+    } catch (error) {
+        showAction(`Failed to apply best proxy: ${error}`, true);
+    }
+}
+
+async function applyProxy(proxy) {
+    try {
+        const response = await fetch('/api/proxy/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proxy }),
         });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showAction(data.message || `Failed to apply ${proxy}`, true);
+            return;
+        }
+        showAction(data.message || `Applied ${proxy}`);
+        await fetchState();
+    } catch (error) {
+        showAction(`Failed to apply ${proxy}: ${error}`, true);
+    }
 }
 
-function updateProxies() {
-    const proxyTable = document.getElementById('proxy-table').getElementsByTagName('tbody')[0];
-    proxyTable.innerHTML = '';
-    const loadingRow = proxyTable.insertRow(0);
-    loadingRow.innerHTML = `<td colspan="15">Updating proxies, please wait...</td>`;
+function wireEvents() {
+    el('settings-form').addEventListener('submit', saveSettings);
+    el('test-qb').addEventListener('click', testQbConnection);
+    el('run-now').addEventListener('click', runNow);
+    el('stop-scan').addEventListener('click', () => postSimpleAction('/api/scan/stop', 'Stop requested'));
+    el('resume-scan').addEventListener('click', () => postSimpleAction('/api/scan/resume', 'Scan resumed'));
+    el('restart-scan').addEventListener('click', () => postSimpleAction('/api/scan/restart', 'Scan restarted from top'));
+    el('clear-refetch').addEventListener('click', () => postSimpleAction('/api/scan/clear-refetch', 'Cache cleared and refetch started'));
+    el('apply-best').addEventListener('click', applyBest);
+    el('theme-toggle').addEventListener('click', () => {
+        setTheme(state.theme === 'dark' ? 'light' : 'dark');
+    });
 
-    fetch('/update_proxies')
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                setTimeout(fetchProxies, 5000);
-            } else {
-                alert('Failed to update proxies.');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while updating the proxies.');
-        });
-}
-
-function fetchProxies() {
-    fetch('/proxies')
-        .then(response => response.json())
-        .then(data => {
-            const proxies = data.proxies;
-            const lastUpdate = data.last_update;
-            const proxyTable = document.getElementById('proxy-table').getElementsByTagName('tbody')[0];
-            proxyTable.innerHTML = '';
-
-            const sortedProxies = Object.entries(proxies).sort((a, b) => {
-                function score(v) {
-                    const tests = ['tcp_connect', 'socks5_handshake', 'remote_connect', 'dns_ok', 'http_ok', 'https_ok', 'http_proxy_ok', 'https_proxy_ok'];
-                    const passCount = tests.reduce((n, k) => n + (v[k] ? 1 : 0), 0);
-                    const allPass = passCount === tests.length ? 2 : (passCount > 0 ? 1 : 0);
-                    const bandwidth = v.bandwidth_kbps || 0;
-                    const trackerScore = ((v.tracker_tcp_ok ? 1 : 0) + (v.tracker_udp_ok ? 1 : 0));
-                    return [allPass, trackerScore, passCount, bandwidth];
-                }
-                const av = score(a[1]), bv = score(b[1]);
-                for (let i = 0; i < av.length; ++i) {
-                    if (bv[i] !== av[i]) return bv[i] - av[i];
-                }
-                return 0;
-            });
-
-            const MAX_ROWS = 1000;
-            sortedProxies.slice(0, MAX_ROWS).forEach(([proxy, details], index) => {
-                const row = proxyTable.insertRow(index);
-                row.innerHTML = `
-                    <td>${proxy}</td>
-                    <td>${iconCell(details.tcp_connect)}</td>
-                    <td>${iconCell(details.socks5_handshake)}</td>
-                    <td>${iconCell(details.remote_connect)}</td>
-                    <td>${iconCell(details.dns_ok)}</td>
-                    <td>${iconCell(details.http_ok)} <small>(S5)</small></td>
-                    <td>${iconCell(details.https_ok)} <small>(S5)</small></td>
-                    <td>${iconCell(details.http_proxy_ok)}</td>
-                    <td>${iconCell(details.https_proxy_ok)}</td>
-                    <td>${details.bandwidth_kbps !== null ? details.bandwidth_kbps : ''}</td>
-                    <td>${iconCell(details.tracker_tcp_ok)}</td>
-                    <td>${iconCell(details.tracker_udp_ok)}</td>
-                    <td>${details.last_checked ? details.last_checked : 'Never'}</td>
-                    <td>
-                        <button onclick="setProxyQB('${proxy}', ${index})">Set (qB)</button>
-                        <button onclick="setProxyFF('${proxy}', ${index})">Set (FF)</button>
-                        <button onclick="retestProxy('${proxy}', ${index})">Retest</button>
-                    </td>
-                `;
-            });
-
-            document.getElementById('last-update').innerText = `Last update: ${lastUpdate}`;
-            enableColumnSorting();
-
-            // Re-apply sort if active
-            if (currentSort.idx !== null) {
-                sortTable(currentSort.idx, currentSort.asc);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-}
-
-function retestProxy(proxy, rowIndex) {
-    fetch(`/retest_proxy/${proxy}`)
-        .then(response => response.json())
-        .then(() => fetchProxies())
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while retesting the proxy.');
-        });
-}
-
-function updateCurrentProxies() {
-    fetch('/current_proxy')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('current-proxy').innerText = data.current_proxy;
-        })
-        .catch(error => console.error('Error fetching qB proxy:', error));
-
-    fetch('/current_firefox_proxy')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('current-firefox-proxy').innerText = data.firefox_proxy;
-        })
-        .catch(error => console.error('Error fetching Firefox proxy:', error));
-}
-
-function fetchStatus() {
-    fetch('/update_status')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('update-status').innerText = data.status;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-}
-
-function fetchQbConnectionStatus() {
-    fetch('/qb_connection_status')
-        .then(response => response.json())
-        .then(data => {
-            let status = document.getElementById('qb-connection-status');
-            if (!status) {
-                status = document.createElement('div');
-                status.id = 'qb-connection-status';
-                document.querySelector('.container').appendChild(status);
-            }
-            status.innerText = `qBittorrent Proxy Status: ${data.status}`;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-}
-
-function fetchProgress() {
-    fetch('/progress')
-        .then(response => response.json())
-        .then(data => {
-            let progressElem = document.getElementById('proxy-progress');
-            if (!progressElem) {
-                progressElem = document.createElement('div');
-                progressElem.id = 'proxy-progress';
-                document.querySelector('.container').insertBefore(progressElem, document.querySelector('.table-container'));
-            }
-            if (data.current_proxy) {
-                progressElem.innerText = `Testing proxy ${data.current_index} of ${data.total}: ${data.current_proxy}`;
-            } else {
-                progressElem.innerText = '';
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-}
-
-function startProxyUpdates(interval) {
-    fetchProxies();
-    updateCurrentProxies();
-    setInterval(fetchProxies, interval);
-    setInterval(updateCurrentProxies, 15000);
-    setInterval(fetchStatus, 1000);
-    setInterval(fetchQbConnectionStatus, 300000);
-    setInterval(fetchProgress, 1000);
-}
-
-function enableColumnSorting() {
-    const table = document.getElementById('proxy-table');
-    if (!table) return;
-    const ths = table.querySelectorAll('th');
-
-    ths.forEach((th, idx) => {
-        th.style.cursor = 'pointer';
-        th.onclick = function() {
-            if (currentSort.idx === idx) currentSort.asc = !currentSort.asc;
-            else { currentSort.idx = idx; currentSort.asc = false; }
-            sortTable(idx, currentSort.asc);
-        };
+    el('proxies-body').addEventListener('click', (event) => {
+        const target = event.target;
+        if (!target.classList.contains('apply-proxy')) {
+            return;
+        }
+        const proxy = target.getAttribute('data-proxy');
+        if (proxy) {
+            applyProxy(proxy);
+        }
     });
 }
 
-function sortTable(colIdx, asc) {
-    const table = document.getElementById('proxy-table');
-    const tbody = table.tBodies[0];
-    const rows = Array.from(tbody.rows);
-
-    rows.sort((a, b) => {
-        let v1 = a.cells[colIdx].textContent.trim();
-        let v2 = b.cells[colIdx].textContent.trim();
-        if ([1,2,3,4,5,6,7,8,10,11].includes(colIdx)) {
-            const testScore = t => t.includes('✔') ? 2 : t.includes('✖') ? 1 : 0;
-            v1 = testScore(v1); v2 = testScore(v2);
-        }
-        if (colIdx === 9) { 
-            v1 = parseFloat(v1) || 0; 
-            v2 = parseFloat(v2) || 0;
-        }
-        if (!isNaN(v1) && !isNaN(v2)) return asc ? v1 - v2 : v2 - v1;
-        return asc ? v1.localeCompare(v2) : v2.localeCompare(v1);
-    });
-
-    rows.forEach(row => tbody.appendChild(row));
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    startProxyUpdates(5000);
+document.addEventListener('DOMContentLoaded', async () => {
+    initTheme();
+    wireEvents();
+    await fetchState();
+    setInterval(fetchState, 8000);
 });

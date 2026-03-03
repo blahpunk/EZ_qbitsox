@@ -1,50 +1,126 @@
-<!-- templates/index.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Proxy Switcher</title>
+    <title>EZ qBit SOCKS5 Service</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-<div class="container">
-    <h1>Proxy Switcher</h1>
+<main class="page-shell">
+    <header class="hero">
+        <div class="hero-row">
+            <div>
+                <h1>EZ qBit SOCKS5 Service</h1>
+                <p id="service-summary">Loading service state...</p>
+            </div>
+            <button type="button" id="theme-toggle" class="theme-toggle">Toggle Theme</button>
+        </div>
+    </header>
 
-    <p>Current qBittorrent Proxy: <span id="current-proxy">{{ current_proxy }}</span></p>
-    <p>Current Firefox Proxy: <span id="current-firefox-proxy">{{ firefox_proxy }}</span></p>
-    <p>Status: <span id="update-status">Idle</span></p>
-    <p>Last update: <span id="last-update"></span></p>
+    <section class="panel controls">
+        <h2>qBittorrent Access</h2>
+        <form id="settings-form">
+            <div class="grid cols-4">
+                <label>Host
+                    <input id="qb-host" type="text" required>
+                </label>
+                <label>Port
+                    <input id="qb-port" type="number" min="1" max="65535" required>
+                </label>
+                <label>Username
+                    <input id="qb-username" type="text" required>
+                </label>
+                <label>Password
+                    <input id="qb-password" type="password" placeholder="Leave blank to keep current">
+                </label>
+            </div>
 
-    <button onclick="updateProxies()">Update Proxies</button>
+            <h3>Service Intervals</h3>
+            <div class="grid cols-4">
+                <label>Scan interval (minutes)
+                    <input id="scan-interval" type="number" min="1" max="1440" required>
+                </label>
+                <label>Retest age (minutes)
+                    <input id="retest-age" type="number" min="1" max="10080" required>
+                </label>
+                <label>Workers
+                    <input id="max-workers" type="number" min="1" max="500" required>
+                </label>
+                <label>Socket timeout (seconds)
+                    <input id="socket-timeout" type="number" min="1" max="60" required>
+                </label>
+            </div>
 
-    <div class="table-container">
-        <table id="proxy-table">
-            <thead>
+            <h3>Auto-Update qB Proxy</h3>
+            <div class="grid cols-3">
+                <label class="checkbox-row">
+                    <input id="auto-enabled" type="checkbox">
+                    Enable automatic best-proxy apply
+                </label>
+                <label>Auto-apply interval (minutes)
+                    <input id="auto-interval" type="number" min="1" max="1440" required>
+                </label>
+                <label>Source fetch timeout (seconds)
+                    <input id="source-timeout" type="number" min="1" max="120" required>
+                </label>
+            </div>
+
+            <div class="actions-row">
+                <button type="submit">Save Settings</button>
+                <button type="button" id="test-qb">Test qB Connection</button>
+                <button type="button" id="run-now">Run Update Now</button>
+                <button type="button" id="stop-scan">Stop Scan</button>
+                <button type="button" id="resume-scan">Resume Scan</button>
+                <button type="button" id="restart-scan">Start Over From Top</button>
+                <button type="button" id="clear-refetch">Clear Cache + Refetch</button>
+                <button type="button" id="apply-best">Apply Best Proxy Now</button>
+            </div>
+        </form>
+        <p id="action-message" class="muted"></p>
+        <p id="qb-test-result" class="muted"></p>
+        <p id="qb-current" class="muted"></p>
+    </section>
+
+    <section class="panel status">
+        <h2>Status</h2>
+        <div class="status-grid">
+            <div><strong>Service state:</strong> <span id="service-state">-</span></div>
+            <div><strong>Stage:</strong> <span id="service-stage">-</span></div>
+            <div><strong>Progress:</strong> <span id="service-progress">-</span></div>
+            <div><strong>Scan paused:</strong> <span id="scan-paused">-</span></div>
+            <div><strong>Current testing proxy:</strong> <span id="scan-current-proxy">-</span></div>
+            <div><strong>Known proxies:</strong> <span id="count-known">0</span></div>
+            <div><strong>Passed proxies:</strong> <span id="count-passed">0</span></div>
+            <div><strong>Last run started:</strong> <span id="last-started">-</span></div>
+            <div><strong>Last run finished:</strong> <span id="last-finished">-</span></div>
+            <div><strong>Next run:</strong> <span id="next-run">-</span></div>
+            <div><strong>Last auto-apply:</strong> <span id="last-auto">-</span></div>
+            <div><strong>Last applied proxy:</strong> <span id="last-applied-proxy">-</span></div>
+            <div><strong>Service error:</strong> <span id="service-error">-</span></div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Fully Passed Proxies (qB SOCKS5 Tracker Ready)</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
                 <tr>
                     <th>Proxy</th>
-                    <th>TCP</th>
-                    <th>SOCKS5</th>
-                    <th>Remote</th>
-                    <th>DNS</th>
-                    <th>HTTP (S5)</th>
-                    <th>HTTPS (S5)</th>
-                    <th>HTTP</th>
-                    <th>HTTPS</th>
-                    <th>Bandwidth (KB/s)</th>
-                    <th>Tracker TCP</th>
-                    <th>Tracker UDP</th>
-                    <th>Last Checked</th>
-                    <th>Action</th>
+                    <th>Latency (ms)</th>
+                    <th>Last Tested</th>
+                    <th>Sources</th>
+                    <th>Apply</th>
                 </tr>
-            </thead>
-            <tbody>
-                <!-- JS dynamically fills this -->
-            </tbody>
-        </table>
-    </div>
-</div>
+                </thead>
+                <tbody id="proxies-body">
+                <tr><td colspan="5">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
 <script src="/static/js/script.js"></script>
 </body>
 </html>

@@ -27,6 +27,7 @@ proxies_cache.json
 *.bak
 *.tmp
 *.log
+data/
 
 # Generated proxy source/result files
 soxlist*.txt
