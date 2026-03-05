@@ -103,33 +103,37 @@ class ProxyTester:
 
         try:
             sock = socks.socksocket()
-            sock.set_proxy(socks.SOCKS5, ip, port, rdns=True)
-            sock.settimeout(self.timeout_seconds)
+            try:
+                sock.set_proxy(socks.SOCKS5, ip, port, rdns=True)
+                sock.settimeout(self.timeout_seconds)
 
-            start = time.perf_counter()
-            sock.connect((TRACKER_IP, TRACKER_PORT))
-            latency_ms = round((time.perf_counter() - start) * 1000, 2)
+                start = time.perf_counter()
+                sock.connect((TRACKER_IP, TRACKER_PORT))
+                latency_ms = round((time.perf_counter() - start) * 1000, 2)
 
-            checks["socks5_handshake"] = True
-            checks["tracker_tcp"] = True
-            sock.close()
+                checks["socks5_handshake"] = True
+                checks["tracker_tcp"] = True
+            finally:
+                sock.close()
         except OSError:
             return self._result(checks, latency_ms, "socks5 or tracker tcp failed")
 
         try:
             udp_sock = socks.socksocket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_sock.set_proxy(socks.SOCKS5, ip, port, rdns=True)
-            udp_sock.settimeout(self.timeout_seconds)
+            try:
+                udp_sock.set_proxy(socks.SOCKS5, ip, port, rdns=True)
+                udp_sock.settimeout(self.timeout_seconds)
 
-            tx_id = random.randint(1, 0xFFFFFFFF)
-            packet = struct.pack(">QLL", 0x41727101980, 0, tx_id)
-            udp_sock.sendto(packet, (TRACKER_IP, TRACKER_PORT))
-            response, _ = udp_sock.recvfrom(1024)
+                tx_id = random.randint(1, 0xFFFFFFFF)
+                packet = struct.pack(">QLL", 0x41727101980, 0, tx_id)
+                udp_sock.sendto(packet, (TRACKER_IP, TRACKER_PORT))
+                response, _ = udp_sock.recvfrom(1024)
 
-            if len(response) >= 16:
-                action, returned_tx_id = struct.unpack(">LL", response[:8])
-                checks["tracker_udp"] = action == 0 and returned_tx_id == tx_id
-            udp_sock.close()
+                if len(response) >= 16:
+                    action, returned_tx_id = struct.unpack(">LL", response[:8])
+                    checks["tracker_udp"] = action == 0 and returned_tx_id == tx_id
+            finally:
+                udp_sock.close()
         except OSError:
             checks["tracker_udp"] = False
 

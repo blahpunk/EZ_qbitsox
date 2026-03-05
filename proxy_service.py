@@ -457,7 +457,8 @@ class ProxyService:
 
             return results, timed_out_count
         finally:
-            pool.shutdown(wait=False, cancel_futures=True)
+            # Wait for worker threads to exit to avoid descriptor/thread leaks.
+            pool.shutdown(wait=True, cancel_futures=True)
 
     def _apply_batch_results_locked(self, batch_results: Dict[str, Dict[str, Any]], now_iso: str) -> None:
         for proxy, result in batch_results.items():

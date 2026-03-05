@@ -35,6 +35,18 @@ function setTheme(theme) {
     localStorage.setItem('ez_qbitsox_theme', safeTheme);
 }
 
+async function parseApiResponse(response) {
+    const raw = await response.text();
+    try {
+        return JSON.parse(raw);
+    } catch {
+        const fallback = raw && raw.trim().length > 0
+            ? raw.trim().slice(0, 300)
+            : `HTTP ${response.status}`;
+        return { ok: false, message: fallback };
+    }
+}
+
 function initTheme() {
     const saved = localStorage.getItem('ez_qbitsox_theme');
     if (saved === 'dark' || saved === 'light') {
@@ -143,7 +155,12 @@ function renderProxies(proxies) {
 async function fetchState() {
     try {
         const response = await fetch('/api/state');
-        const snapshot = await response.json();
+        const snapshot = await parseApiResponse(response);
+        if (!response.ok || !snapshot || snapshot.ok === false) {
+            const msg = snapshot && snapshot.message ? snapshot.message : `HTTP ${response.status}`;
+            showAction(`Failed to fetch state: ${msg}`, true);
+            return;
+        }
 
         renderService(snapshot);
         renderProxies(snapshot.passed_proxies || []);
@@ -166,8 +183,7 @@ async function saveSettings(event) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settingsPayloadFromForm()),
         });
-
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showAction(data.message || 'Failed to save settings', true);
             return;
@@ -184,7 +200,7 @@ async function saveSettings(event) {
 async function runNow() {
     try {
         const response = await fetch('/api/run-now', { method: 'POST' });
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showAction(data.message || 'Failed to trigger update', true);
             return;
@@ -199,7 +215,7 @@ async function runNow() {
 async function postSimpleAction(endpoint, successFallback) {
     try {
         const response = await fetch(endpoint, { method: 'POST' });
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showAction(data.message || 'Action failed', true);
             return;
@@ -214,7 +230,7 @@ async function postSimpleAction(endpoint, successFallback) {
 async function testQbConnection() {
     try {
         const response = await fetch('/api/qb/test', { method: 'POST' });
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showQbTestResult(data.message || 'qBittorrent connection test failed', true);
             return;
@@ -232,7 +248,7 @@ async function testQbConnection() {
 async function applyBest() {
     try {
         const response = await fetch('/api/proxy/apply-best', { method: 'POST' });
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showAction(data.message || 'Failed to apply best proxy', true);
             return;
@@ -251,7 +267,7 @@ async function applyProxy(proxy) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ proxy }),
         });
-        const data = await response.json();
+        const data = await parseApiResponse(response);
         if (!response.ok || !data.ok) {
             showAction(data.message || `Failed to apply ${proxy}`, true);
             return;

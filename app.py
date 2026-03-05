@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
+from werkzeug.exceptions import HTTPException
 
 from proxy_service import ProxyService
 from settings_store import SecureSettingsStore
@@ -22,6 +23,15 @@ def _json_payload() -> Dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     return {}
+
+
+@app.errorhandler(Exception)
+def api_error_handler(exc: Exception):
+    if request.path.startswith("/api/"):
+        if isinstance(exc, HTTPException):
+            return jsonify({"ok": False, "message": exc.description}), exc.code
+        return jsonify({"ok": False, "message": str(exc)}), 500
+    raise exc
 
 
 @app.route("/")
