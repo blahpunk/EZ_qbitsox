@@ -11,3 +11,4 @@ https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks5.txt
 https://raw.githubusercontent.com/shiftytr/proxy-list/master/socks5.txt
 https://raw.githubusercontent.com/arandomguyhere/Tools/main/socks5-scanner/proxies/proxies_working.txt
 https://raw.githubusercontent.com/prxchk/proxy-list/main/socks5.txt
+https://rcloak.com/api/proxies/raw?protocol=socks5
